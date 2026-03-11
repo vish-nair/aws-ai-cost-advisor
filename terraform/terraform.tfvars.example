@@ -1,0 +1,18 @@
+aws_region  = "us-east-1"
+environment = "prod"
+
+# Emails that will receive the weekly cost report
+report_recipients = ["your-team@example.com"]
+
+# Anthropic API key — stored securely in Secrets Manager
+# Option A: let Terraform create the secret (fill in the key value)
+anthropic_api_key = "sk-ant-..."
+
+# Option B: use an existing secret (comment out anthropic_api_key above)
+# anthropic_api_key_secret_arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:my-secret-abc123"
+
+# Optional tuning
+schedule_expression    = "cron(0 8 ? * MON *)"  # Every Monday 08:00 UTC
+lambda_memory_mb       = 512
+lambda_timeout_seconds = 900
+report_retention_days  = 90

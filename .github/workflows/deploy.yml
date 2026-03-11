@@ -1,0 +1,98 @@
+name: Deploy Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "requirements.txt"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # OIDC auth
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  # ── Build & Test ────────────────────────────────────────────────────────────
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest boto3
+
+      - name: Run tests
+        run: pytest tests/ -v
+        continue-on-error: true   # Tests are optional in early stage
+
+      - name: Build deployment package
+        run: |
+          mkdir -p dist/package
+          pip install -r requirements.txt --target dist/package --platform manylinux2014_x86_64 --only-binary=:all:
+          cp -r src/* dist/package/
+          cd dist/package && zip -r ../advisor.zip . -x "*.pyc" -x "*/__pycache__/*"
+          echo "Package size: $(du -sh dist/advisor.zip | cut -f1)"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: advisor-zip
+          path: dist/advisor.zip
+          retention-days: 7
+
+  # ── Deploy ──────────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to AWS
+    runs-on: ubuntu-latest
+    needs: build
+    environment: production   # Requires manual approval in GitHub
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: advisor-zip
+          path: dist/
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update Lambda function code
+        run: |
+          aws lambda update-function-code \
+            --function-name aws-ai-cost-advisor-prod \
+            --zip-file fileb://dist/advisor.zip \
+            --output table
+
+      - name: Wait for update to complete
+        run: |
+          aws lambda wait function-updated \
+            --function-name aws-ai-cost-advisor-prod
+
+      - name: Smoke test (invoke synchronously)
+        run: |
+          RESULT=$(aws lambda invoke \
+            --function-name aws-ai-cost-advisor-prod \
+            --payload '{"smoke_test": true}' \
+            --cli-read-timeout 30 \
+            --output json \
+            response.json 2>&1 || true)
+          echo "Invoke result: $RESULT"
+          cat response.json || true

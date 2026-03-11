@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+*.zip
+
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfplan
+tfplan
+terraform.tfvars
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Secrets
+.env
+*.pem
